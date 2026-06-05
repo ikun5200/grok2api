@@ -37,23 +37,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
+      # 第一步：生成不带后缀的主标签（latest, main, 版本号）
+      - name: Extract metadata (主标签)
+        id: meta-main
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # 👇 核心修改：完善标签生成规则
           tags: |
-            # 1. main 分支推送时，生成 latest 和 main 两个标签
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            # 2. 推送 Git 标签时，自动生成对应版本标签（如 v1.6.2）
             type=ref,event=tag
             type=semver,pattern={{version}}
-          # 👇 新增：自动为每个标签生成架构后缀（-amd64, -arm64）
+
+      # 第二步：生成带架构后缀的标签（latest-amd64, main-arm64 等）
+      - name: Extract metadata (架构后缀标签)
+        id: meta-arch
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+            type=semver,pattern={{version}}
           flavor: |
-            latest=false
-            suffix=-{{arch}},onlatest=true
+            suffix=-{{arch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -61,8 +69,11 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # 合并两个步骤生成的所有标签
+          tags: |
+            ${{ steps.meta-main.outputs.tags }}
+            ${{ steps.meta-arch.outputs.tags }}
+          labels: ${{ steps.meta-main.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           pull: true
