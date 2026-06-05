@@ -1,12 +1,11 @@
 name: Build Docker Image
 
-# 原有的触发条件保留，新增下面一行
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # 开启手动触发（无需额外参数）
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -43,10 +42,18 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # 👇 核心修改：完善标签生成规则
           tags: |
-            type=raw,value=latest,enable=${{ github.ref_type == 'branch' }}
+            # 1. main 分支推送时，生成 latest 和 main 两个标签
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            # 2. 推送 Git 标签时，自动生成对应版本标签（如 v1.6.2）
             type=ref,event=tag
             type=semver,pattern={{version}}
+          # 👇 新增：自动为每个标签生成架构后缀（-amd64, -arm64）
+          flavor: |
+            latest=false
+            suffix=-{{arch}},onlatest=true
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
